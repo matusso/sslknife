@@ -285,6 +285,7 @@ func pkcs12Objects(data []byte, password string) ([]Object, error) {
 	// ToPEM is deprecated because it labels PKCS#1/SEC1 keys as "PRIVATE
 	// KEY"; the blocks are re-parsed below with every key encoding. It is
 	// used because DecodeChain cannot read files holding several entries.
+	//lint:ignore SA1019 deprecated for its mislabelled keys, handled here
 	blocks, err := pkcs12.ToPEM(data, password) //nolint:staticcheck // deprecated for its mislabelled keys, handled here
 	var notImpl pkcs12.NotImplementedError
 	if errors.As(err, &notImpl) {
