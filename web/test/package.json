@@ -1,0 +1,9 @@
+{
+  "name": "sslknife-ui-smoke",
+  "private": true,
+  "type": "module",
+  "description": "DOM smoke test for the SSLKnife web UI (runs app.js in jsdom against a live server).",
+  "devDependencies": {
+    "jsdom": "^27.0.0"
+  }
+}

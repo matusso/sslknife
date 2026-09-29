@@ -1,0 +1,9 @@
+# Used by GoReleaser with a pre-built binary.
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY sslknife /usr/local/bin/sslknife
+ENV SSLKNIFE_DATA_DIR=/data SSLKNIFE_CONFIG=/data/config.yaml SSLKNIFE_NO_KEYRING=1
+VOLUME ["/data"]
+EXPOSE 8443
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/sslknife"]
+CMD ["server", "--listen", "0.0.0.0:8443", "--allowed-host", "localhost"]

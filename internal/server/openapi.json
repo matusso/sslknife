@@ -1,0 +1,129 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SSLKnife API",
+    "version": "1",
+    "description": "Local API of `sslknife server`. Authenticate with the access token printed at startup, either as `Authorization: Bearer <token>` or through the browser session created by opening the login URL. Browser (cookie) sessions must send the `X-CSRF-Token` header from `GET /api/v1/session` on POST and DELETE requests. Private key material is never returned by this API."
+  },
+  "servers": [{ "url": "/api/v1" }],
+  "security": [{ "bearer": [] }, { "session": [] }],
+  "components": {
+    "securitySchemes": {
+      "bearer": { "type": "http", "scheme": "bearer" },
+      "session": { "type": "apiKey", "in": "cookie", "name": "sslknife_session" }
+    },
+    "schemas": {
+      "Error": { "type": "object", "properties": { "error": { "type": "string" } }, "required": ["error"] },
+      "CertSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "name": { "type": "string" }, "common_name": { "type": "string" },
+          "subject": { "type": "string" }, "issuer": { "type": "string" },
+          "sans": { "type": "array", "items": { "type": "string" } },
+          "not_before": { "type": "string", "format": "date-time" }, "not_after": { "type": "string", "format": "date-time" },
+          "days_remaining": { "type": "integer" },
+          "status": { "type": "string", "enum": ["OK", "CA", "WARNING", "CRITICAL", "EXPIRED", "NOT_YET_VALID"] },
+          "key": { "type": "string" }, "signature_algorithm": { "type": "string" },
+          "is_ca": { "type": "boolean" }, "self_signed": { "type": "boolean" },
+          "sha256": { "type": "string" }, "serial": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "key_id": { "type": "string" }, "issuer_id": { "type": "string" },
+          "ct_monitored": { "type": "boolean" }, "source": { "type": "string" },
+          "imported_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Key": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "name": { "type": "string" }, "algorithm": { "type": "string" },
+          "bits": { "type": "integer" }, "description": { "type": "string" }, "spki_sha256": { "type": "string" },
+          "has_private_key": { "type": "boolean" }, "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "SSHKey": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "name": { "type": "string" }, "type": { "type": "string" }, "bits": { "type": "integer" },
+          "fingerprint_sha256": { "type": "string" }, "comment": { "type": "string" },
+          "has_private_key": { "type": "boolean" }, "passphrase_protected": { "type": "boolean" }, "public_key": { "type": "string" }
+        }
+      },
+      "CTObservation": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "watch": { "type": "string" },
+          "status": { "type": "string", "enum": ["known", "new", "changed", "unexpected", "expired"] },
+          "reason": { "type": "string" }, "dns_names": { "type": "array", "items": { "type": "string" } },
+          "issuer": { "type": "string" }, "not_before": { "type": "string", "format": "date-time" },
+          "not_after": { "type": "string", "format": "date-time" }, "acknowledged": { "type": "boolean" }
+        }
+      },
+      "TLSRequest": {
+        "type": "object",
+        "properties": {
+          "target": { "type": "string", "examples": ["example.com:443", "smtp://mail.example.com"] },
+          "protocol": { "type": "string", "description": "Empty for autodetection" },
+          "sni": { "type": "string" }, "save": { "type": "boolean", "description": "Record in history" }
+        },
+        "required": ["target"]
+      },
+      "InspectResult": { "type": "object", "description": "Same schema as `sslknife tls inspect --json`." },
+      "ScanResult": { "type": "object", "description": "Same schema as `sslknife tls scan --json`." },
+      "CertificateDetail": {
+        "type": "object",
+        "properties": {
+          "summary": { "$ref": "#/components/schemas/CertSummary" },
+          "details": { "type": "object", "description": "Same schema as one entry of `sslknife cert inspect --json`." },
+          "chain": { "type": "array", "items": { "$ref": "#/components/schemas/CertSummary" } },
+          "issued": { "type": "array", "items": { "$ref": "#/components/schemas/CertSummary" } },
+          "ct": { "type": "array", "items": { "$ref": "#/components/schemas/CTObservation" } },
+          "history": { "type": "array", "items": { "type": "object" } },
+          "findings": { "type": "array", "items": { "type": "object" } }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/session": { "get": { "summary": "Session information and CSRF token", "responses": { "200": { "description": "OK" } } } },
+    "/logout": { "post": { "summary": "End the browser session", "responses": { "200": { "description": "OK" } } } },
+    "/dashboard": { "get": { "summary": "Counts, expiring certificates, recent scans and CT discoveries", "responses": { "200": { "description": "OK" } } } },
+    "/certificates": {
+      "get": {
+        "summary": "List stored certificates",
+        "parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" }, "description": "Search query, e.g. `expires:<30d tag:production`" }],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CertSummary" } } } } } }
+      },
+      "post": {
+        "summary": "Import certificates from PEM text (private keys are ignored)",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": {
+          "pem": { "type": "string" }, "name": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } }, "comment": { "type": "string" } }, "required": ["pem"] } } } },
+        "responses": { "200": { "description": "Imported" }, "400": { "description": "No certificate", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } } }
+      }
+    },
+    "/certificates/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "ID, name, ID prefix or SHA-256 prefix" }],
+      "get": { "summary": "Certificate details, chain, CT observations and TLS history", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CertificateDetail" } } } }, "404": { "description": "Not found" } } },
+      "delete": { "summary": "Delete a certificate", "responses": { "200": { "description": "Deleted" }, "404": { "description": "Not found" } } }
+    },
+    "/certificates/{id}/pem": { "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "get": { "summary": "Download the certificate as PEM", "responses": { "200": { "description": "PEM" } } } },
+    "/certificates/{id}/tags": { "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "post": { "summary": "Add tags", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "tags": { "type": "array", "items": { "type": "string" } } } } } } }, "responses": { "200": { "description": "OK" } } } },
+    "/certificates/{id}/tags/{tag}": { "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "tag", "in": "path", "required": true, "schema": { "type": "string" } }], "delete": { "summary": "Remove a tag", "responses": { "200": { "description": "OK" } } } },
+    "/keys": { "get": { "summary": "Key metadata (no key material)", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Key" } } } } } } } },
+    "/ssh/keys": { "get": { "summary": "SSH key metadata", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SSHKey" } } } } } } } },
+    "/search": { "get": { "summary": "Search certificates, keys and SSH keys", "parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } } },
+    "/tls/inspect": { "post": { "summary": "Inspect a TLS endpoint", "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TLSRequest" } } } }, "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InspectResult" } } } }, "502": { "description": "Connection failed" } } } },
+    "/tls/scan": { "post": { "summary": "Full TLS scan (synchronous, up to a few minutes)", "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TLSRequest" } } } }, "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanResult" } } } }, "502": { "description": "Connection failed" } } } },
+    "/tls/endpoints": { "get": { "summary": "Endpoints with recorded observations", "responses": { "200": { "description": "OK" } } } },
+    "/tls/scans": { "get": { "summary": "Recent observations", "parameters": [{ "name": "target", "in": "query", "schema": { "type": "string" } }, { "name": "limit", "in": "query", "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } } },
+    "/tls/scans/{id}": { "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "get": { "summary": "Full stored result of an observation", "responses": { "200": { "description": "OK" } } } },
+    "/ct/watches": {
+      "get": { "summary": "CT watches", "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Add a watch", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "domain": { "type": "string", "examples": ["*.example.com"] }, "include_subdomains": { "type": "boolean" } }, "required": ["domain"] } } } }, "responses": { "200": { "description": "Existing" }, "201": { "description": "Created" } } }
+    },
+    "/ct/watches/{id}": { "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "delete": { "summary": "Remove a watch", "responses": { "200": { "description": "Deleted" } } } },
+    "/ct/observations": { "get": { "summary": "CT observations", "parameters": [{ "name": "status", "in": "query", "schema": { "type": "string" } }, { "name": "limit", "in": "query", "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CTObservation" } } } } } } } },
+    "/ct/observations/{id}/ack": { "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "post": { "summary": "Acknowledge an observation", "responses": { "200": { "description": "OK" } } } },
+    "/ct/check": { "post": { "summary": "Poll CT now", "responses": { "200": { "description": "OK" } } } },
+    "/openapi.json": { "get": { "summary": "This document", "responses": { "200": { "description": "OK" } } } }
+  }
+}

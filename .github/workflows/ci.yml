@@ -1,0 +1,87 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go test ./...
+        env:
+          SSLKNIFE_NO_KEYRING: "1"
+      - if: matrix.os == 'ubuntu-latest'
+        run: go test -race ./...
+        env:
+          SSLKNIFE_NO_KEYRING: "1"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: test -z "$(gofmt -l .)"
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Dependency vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: Static analysis
+        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+      - name: Fuzz parsers (short)
+        run: make fuzz FUZZTIME=20s
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: node --check web/static/app.js
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: UI smoke test against a live server
+        run: |
+          cd web/test && npm install --no-audit --no-fund
+          go build -o /tmp/sslknife ../..
+          export SSLKNIFE_DATA_DIR=$RUNNER_TEMP/data SSLKNIFE_PASSWORD=ci-password-123 SSLKNIFE_NO_KEYRING=1
+          export SSLKNIFE_SERVER_TOKEN=ci-token-0123456789abcdef
+          /tmp/sslknife init
+          /tmp/sslknife cert create --cn smoke.example.com --store --name smoke
+          /tmp/sslknife server --listen 127.0.0.1:18443 --no-jobs &
+          sleep 2
+          NODE_TLS_REJECT_UNAUTHORIZED=0 BASE=https://127.0.0.1:18443 TOKEN=$SSLKNIFE_SERVER_TOKEN node smoke.mjs
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make cross
