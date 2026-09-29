@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -53,7 +54,8 @@ func TestEncryptedAtRest(t *testing.T) {
 	if bytes.Contains(raw, []byte("needle-plaintext")) || bytes.Contains(raw, []byte("SQLite format 3")) {
 		t.Fatal("database is not encrypted at rest")
 	}
-	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+	// Windows only honours the read-only bit, so Unix modes are not observable.
+	if st, _ := os.Stat(path); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("db mode %v", st.Mode().Perm())
 	}
 

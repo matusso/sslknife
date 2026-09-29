@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	skcrypto "github.com/matusso/sslknife/internal/crypto"
@@ -27,7 +28,8 @@ func TestKeyFileRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	st, _ := os.Stat(path)
-	if st.Mode().Perm() != 0o600 {
+	// Windows only honours the read-only bit, so Unix modes are not observable.
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %v", st.Mode())
 	}
 	raw, _ := os.ReadFile(path)
