@@ -1,0 +1,83 @@
+# GoReleaser configuration: https://goreleaser.com
+version: 2
+project_name: sslknife
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: sslknife
+    main: .
+    binary: sslknife
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X github.com/matusso/sslknife/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/matusso/sslknife/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/matusso/sslknife/internal/buildinfo.Date={{ .Date }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [README.md, LICENSE, docs/DESIGN.md]
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+signs:
+  # Keyless Sigstore signing of the checksum file (GitHub OIDC in CI).
+  - cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args: ["sign-blob", "--yes", "--output-signature=${signature}", "--output-certificate=${certificate}", "${artifact}"]
+    artifacts: checksum
+
+dockers:
+  - image_templates: ["ghcr.io/matusso/sslknife:{{ .Version }}-amd64"]
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates: ["--platform=linux/amd64"]
+  - image_templates: ["ghcr.io/matusso/sslknife:{{ .Version }}-arm64"]
+    dockerfile: Dockerfile.release
+    use: buildx
+    goarch: arm64
+    build_flag_templates: ["--platform=linux/arm64"]
+
+docker_manifests:
+  - name_template: ghcr.io/matusso/sslknife:{{ .Version }}
+    image_templates: ["ghcr.io/matusso/sslknife:{{ .Version }}-amd64", "ghcr.io/matusso/sslknife:{{ .Version }}-arm64"]
+  - name_template: ghcr.io/matusso/sslknife:latest
+    image_templates: ["ghcr.io/matusso/sslknife:{{ .Version }}-amd64", "ghcr.io/matusso/sslknife:{{ .Version }}-arm64"]
+
+brews:
+  - name: sslknife
+    repository:
+      owner: matusso
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/matusso/sslknife
+    description: Swiss-army knife for TLS, certificates, PKI and SSH keys
+    license: MIT
+    test: |
+      system "#{bin}/sslknife", "version"
+    install: |
+      bin.install "sslknife"
+      generate_completions_from_executable(bin/"sslknife", "completion")
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:"]
