@@ -87,6 +87,8 @@ internal/
   converter/                 format detection, Bundle decode/encode, PKCS#12, JKS
   ct/                        CT providers (Cert Spotter, crt.sh), classification, polling
   sshkeys/                   SSH keys, authorized_keys, OpenSSH certificates
+  vaultkv/                   minimal HashiCorp Vault client: KV v2, Transit, token/AppRole/userpass
+  remotesync/                three-way sync of the inventory with a shared remote (Vault)
   server/                    HTTP server, auth/CSRF/host checks, REST API, jobs, OpenAPI
 web/                         embedded UI (static/) and its jsdom smoke test (test/)
 docs/                        this design, generated command reference (docs/commands)
@@ -180,6 +182,7 @@ vault is opened.
 | 0003 ct | `ct_watches` (with a provider cursor), `ct_observations` |
 | 0004 ssh | `ssh_keys` (the private key file sealed in `secrets`, unchanged) |
 | 0005 settings | `settings` (for example the server TLS identity, with the key sealed) |
+| 0006 remote_sync | `remote_sync` (per remote: the digest of each object as last agreed with it, §13) |
 
 * `certificates` holds the identity (id, name) and the fingerprints
   (`sha256` unique, `sha1`, `spki_sha256`). It also holds the serial, the
@@ -318,7 +321,58 @@ markup. Views:
   downgraded when the server's parameters are weak (DH groups below 2048
   bits, curves below 256 bits).
 
-## 13. Phased roadmap
+## 13. Shared inventory through HashiCorp Vault
+
+Several devices share one inventory through a Vault KV version 2 mount
+(`sslknife remote`, `remote:` in the config). The local encrypted database
+stays the working copy. Search compiles to SQL, and TLS history and CT
+monitoring are per-device, so replacing SQLite with Vault would lose them.
+Only the inventory is synced: certificates, keys and SSH keys with their
+names, comments, tags and notes.
+
+**Layout** below `<mount>/<path>`: `manifest`, `certificates/<sha256>`,
+`keys/<spki-sha256>`, `ssh/<fingerprint-hex>`. Each value is plain JSON with
+PEM (or authorized_keys) encodings. Private keys go into `private_key`, or
+into `private_key_transit` plus `transit_key` when a Transit key is
+configured. The manifest maps every object to the digest of its metadata
+and its KV version, so a sync reads one document and then fetches only the
+objects that changed.
+
+**Merge.** Objects are identified by content, never by local ID. For each
+object the sync compares the local digest L, the manifest digest R and the
+digest S recorded in `remote_sync` when both sides last agreed:
+
+| State | Action |
+|---|---|
+| L = R | in sync |
+| R = S, L changed | push |
+| L = S, R changed | pull |
+| both changed | merge: tags and notes united, remote name/comment preferred, push the result |
+| only L, no S | push (new here) |
+| only L, L = S | delete locally (deleted on another device) |
+| only R, no S | pull (new there) |
+| only R, R = S | delete remotely (deleted here) |
+| one side deleted, the other changed | the change wins and is restored |
+
+**Concurrency.** Object writes check-and-set on the version in the manifest.
+The manifest itself is written with check-and-set last, and removed objects
+are destroyed only after that. A device that loses the race gets a conflict
+and runs the whole sync again from the new manifest (up to 5 attempts). The
+`remote_sync` state is saved only after the manifest write succeeds.
+
+**Triggers.** With `auto_sync`, `requireVault` syncs after unlocking, and
+`Execute` syncs again when SQLite's `total_changes()` shows the command
+wrote something. Failures in automatic syncs only warn. `sslknife server`
+syncs every `remote.interval`.
+
+**Trust.** Vault is trusted with the synced private keys (encryption at rest,
+ACLs, audit log), optionally behind Transit. Tokens come from
+`$VAULT_TOKEN`, AppRole, the OS keychain (`remote login`) or
+`~/.vault-token`, never from flags or the config file. Remote content is
+parsed with the same parsers as imported files. An object whose content does
+not match its path is rejected.
+
+## 14. Phased roadmap
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -334,7 +388,7 @@ Beyond the roadmap's first version (§51), these are future work:
 
 * DNS inspection (`sslknife dns`: CAA, TLSA/DANE, DNSSEC)
 * ACME
-* external secret backends (Vault, cloud KMS, PKCS#11)
+* further secret backends (cloud KMS, PKCS#11)
 * notifications and Prometheus metrics
 
 The interfaces they would plug into already exist: `protocol.Adapter`,

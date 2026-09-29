@@ -32,6 +32,9 @@ type vault struct {
 	keyPath string
 	method  string
 	root    []byte // kept for keyslot management; zeroed on Close
+
+	autoSync bool  // sync with the remote around this command
+	changes  int64 // database change counter after the last sync
 }
 
 func (v *vault) Close() {
@@ -81,6 +84,11 @@ func (a *app) requireVault(ctx context.Context) (*vault, error) {
 	}
 	a.vault = &vault{db: db, kf: kf, inv: inventory.New(db), keyPath: keyPath, method: method, root: root}
 	a.checkPermissions(path, keyPath)
+	if a.autoSyncEnabled() {
+		a.vault.autoSync = true
+		a.autoSync(ctx, a.vault)
+	}
+	a.vault.changes, _ = db.TotalChanges(ctx)
 	return a.vault, nil
 }
 

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -40,7 +41,8 @@ encrypted in the vault, so its fingerprint stays the same across restarts;
 
 While running, the server polls Certificate Transparency (ct.interval),
 re-inspects recorded TLS endpoints (server.refresh_interval) and logs
-certificates entering the critical expiry window. --no-jobs disables this.
+certificates entering the critical expiry window. With a Vault remote it
+also syncs the inventory every remote.interval. --no-jobs disables this.
 
 Exposing the server beyond loopback (--listen 0.0.0.0:8443) prints a warning;
 plain HTTP is then refused unless --allow-insecure-http is given.`,
@@ -79,11 +81,22 @@ plain HTTP is then refused unless --allow-insecure-http is given.`,
 			if err != nil {
 				return err
 			}
+			var syncFn func(context.Context) error
+			if a.cfg.Remote.Enabled() && !a.flags.noSync {
+				syncFn = func(ctx context.Context) error {
+					rep, err := a.runSync(ctx, v, nil, false)
+					if err == nil && len(rep.Changes) > 0 {
+						a.log.Info("remote sync", "changes", syncSummary(rep))
+					}
+					return err
+				}
+			}
 			srv, err := server.New(ctx, v.db, server.Options{
 				Listen: listen, PlainHTTP: plainHTTP, CertFile: certFile, KeyFile: keyFile, Token: token,
 				AllowedHosts: allowedHosts, Config: a.cfg, Logger: a.log, Dialer: a.dialer(),
 				CTToken: os.Getenv(EnvCertSpotterToken), CTBaseURL: os.Getenv(EnvCTBaseURL),
 				Version: buildinfo.Get().Version, Jobs: !noJobs, Static: web.Static(),
+				Sync: syncFn, SyncInterval: a.cfg.Remote.Interval.D(),
 			})
 			if err != nil {
 				return exitcode.With(exitcode.Error, fmt.Errorf("start server: %w", err))

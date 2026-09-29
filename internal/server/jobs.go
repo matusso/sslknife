@@ -22,6 +22,15 @@ func (s *Server) runJobs(ctx context.Context) {
 		go s.every(ctx, time.Minute, d, s.refreshEndpoints)
 	}
 	go s.every(ctx, 5*time.Second, time.Hour, s.checkExpiry)
+	if s.opts.Sync != nil && s.opts.SyncInterval > 0 {
+		go s.every(ctx, time.Second, s.opts.SyncInterval, s.syncRemote)
+	}
+}
+
+func (s *Server) syncRemote(ctx context.Context) {
+	if err := s.opts.Sync(ctx); err != nil {
+		s.log.Warn("remote sync failed", "err", err)
+	}
 }
 
 func (s *Server) every(ctx context.Context, first, interval time.Duration, job func(context.Context)) {

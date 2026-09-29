@@ -15,6 +15,12 @@ const (
 	EnvDataDir  = "SSLKNIFE_DATA_DIR"
 )
 
+// Environment variables for the Vault remote's AppRole login.
+const (
+	EnvVaultRoleID   = "SSLKNIFE_VAULT_ROLE_ID"
+	EnvVaultSecretID = "SSLKNIFE_VAULT_SECRET_ID"
+)
+
 // DefaultConfigPath returns the platform config file location:
 //
 //	Linux:   $XDG_CONFIG_HOME/sslknife/config.yaml (~/.config/...)

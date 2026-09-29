@@ -34,6 +34,7 @@ type globalFlags struct {
 	timeout    time.Duration
 	proxy      string
 	noColor    bool
+	noSync     bool
 }
 
 // app is the per-invocation context passed to every command. It replaces
@@ -49,7 +50,8 @@ type app struct {
 	log    *slog.Logger
 	prompt *prompt.Prompter
 
-	vault *vault // opened lazily by requireVault
+	vault   *vault // opened lazily by requireVault
+	cmdPath string
 }
 
 // Execute runs the CLI and returns the process exit code.
@@ -65,6 +67,7 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	root.SetErr(stderr)
 	err := root.ExecuteContext(ctx)
 	if a.vault != nil {
+		a.finishVault(ctx)
 		a.vault.Close()
 	}
 	if err == nil {
@@ -112,7 +115,8 @@ func newRootCmd(a *app) *cobra.Command {
 		Long: `SSLKnife inspects, creates, converts and inventories X.509 certificates,
 private keys and SSH keys, and analyses remote TLS endpoints.
 
-Everything stored by SSLKnife lives in a local encrypted database.`,
+Everything stored by SSLKnife lives in a local encrypted database, which
+can be shared between devices through HashiCorp Vault ('sslknife remote').`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
@@ -133,6 +137,7 @@ Everything stored by SSLKnife lives in a local encrypted database.`,
 	pf.DurationVar(&f.timeout, "timeout", 0, "network timeout (default from config, 10s)")
 	pf.StringVar(&f.proxy, "proxy", "", "proxy for outbound connections (http://, socks5://)")
 	pf.BoolVar(&f.noColor, "no-color", false, "disable coloured output (also honours NO_COLOR)")
+	pf.BoolVar(&f.noSync, "no-sync", false, "do not sync with the Vault remote for this command")
 	root.MarkFlagsMutuallyExclusive("json", "yaml")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError{err} })
 
@@ -150,7 +155,7 @@ Everything stored by SSLKnife lives in a local encrypted database.`,
 	ctCmd := newCTCmd(a)
 	ctCmd.GroupID = "net"
 	root.AddCommand(tlsCmd, ctCmd)
-	for _, c := range []*cobra.Command{newSearchCmd(a), newServerCmd(a), newVaultCmd(a), newInitCmd(a), newConfigCmd(a), newVersionCmd(a), newDocsCmd(root)} {
+	for _, c := range []*cobra.Command{newSearchCmd(a), newServerCmd(a), newVaultCmd(a), newRemoteCmd(a), newInitCmd(a), newConfigCmd(a), newVersionCmd(a), newDocsCmd(root)} {
 		if c.GroupID == "" && !c.Hidden {
 			c.GroupID = "tools"
 		}
@@ -192,6 +197,7 @@ func (a *app) setup(cmd *cobra.Command) error {
 	}
 	a.log = logging.New(a.stderr, level)
 	a.prompt = prompt.New(a.stdin, a.stderr)
+	a.cmdPath = cmd.CommandPath()
 
 	// A file named with --config must exist (except for `config init`,
 	// which creates it); the default or $SSLKNIFE_CONFIG location may be absent.

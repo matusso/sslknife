@@ -43,6 +43,9 @@ type Options struct {
 	Version      string
 	Jobs         bool
 	Static       fs.FS // web UI assets
+	// Sync, when set, syncs the inventory with the remote every SyncInterval.
+	Sync         func(context.Context) error
+	SyncInterval time.Duration
 }
 
 // Server is a running web interface bound to an unlocked vault.

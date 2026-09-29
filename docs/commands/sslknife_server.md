@@ -18,7 +18,8 @@ encrypted in the vault, so its fingerprint stays the same across restarts;
 
 While running, the server polls Certificate Transparency (ct.interval),
 re-inspects recorded TLS endpoints (server.refresh_interval) and logs
-certificates entering the critical expiry window. --no-jobs disables this.
+certificates entering the critical expiry window. With a Vault remote it
+also syncs the inventory every remote.interval. --no-jobs disables this.
 
 Exposing the server beyond loopback (--listen 0.0.0.0:8443) prints a warning;
 plain HTTP is then refused unless --allow-insecure-http is given.
@@ -59,6 +60,7 @@ sslknife server [flags]
       --json               output JSON
       --log-level string   log level: error|warn|info|debug|trace
       --no-color           disable coloured output (also honours NO_COLOR)
+      --no-sync            do not sync with the Vault remote for this command
       --proxy string       proxy for outbound connections (http://, socks5://)
   -q, --quiet              suppress non-essential output
       --timeout duration   network timeout (default from config, 10s)

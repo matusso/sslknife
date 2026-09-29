@@ -7,7 +7,8 @@ Swiss-army knife for TLS, certificates, PKI and SSH keys
 SSLKnife inspects, creates, converts and inventories X.509 certificates,
 private keys and SSH keys, and analyses remote TLS endpoints.
 
-Everything stored by SSLKnife lives in a local encrypted database.
+Everything stored by SSLKnife lives in a local encrypted database, which
+can be shared between devices through HashiCorp Vault ('sslknife remote').
 
 ### Options
 
@@ -20,6 +21,7 @@ Everything stored by SSLKnife lives in a local encrypted database.
       --json               output JSON
       --log-level string   log level: error|warn|info|debug|trace
       --no-color           disable coloured output (also honours NO_COLOR)
+      --no-sync            do not sync with the Vault remote for this command
       --proxy string       proxy for outbound connections (http://, socks5://)
   -q, --quiet              suppress non-essential output
       --timeout duration   network timeout (default from config, 10s)
@@ -39,6 +41,7 @@ Everything stored by SSLKnife lives in a local encrypted database.
 * [sslknife inspect](sslknife_inspect.md)	 - Detect a file's format and list what it contains
 * [sslknife jks](sslknife_jks.md)	 - Inspect, extract and convert Java keystores (JKS and PKCS#12) without keytool
 * [sslknife key](sslknife_key.md)	 - Generate, inspect and manage private and public keys
+* [sslknife remote](sslknife_remote.md)	 - Share the inventory between devices through HashiCorp Vault
 * [sslknife search](sslknife_search.md)	 - Search the inventory
 * [sslknife server](sslknife_server.md)	 - Run the local web interface and REST API
 * [sslknife ssh](sslknife_ssh.md)	 - Generate, inspect, store and certify SSH keys
