@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -15,7 +16,8 @@ func TestSSHCommands(t *testing.T) {
 	id := e.path("id_test")
 	t.Setenv(EnvSSHPassphrase, "ssh passphrase")
 	e.ok("ssh", "generate", "-o", id, "-C", "tester@box")
-	if st, _ := os.Stat(id); st.Mode().Perm() != 0o600 {
+	// Windows only honours the read-only bit, so Unix modes are not observable.
+	if st, _ := os.Stat(id); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatal("mode")
 	}
 	var info sshkeys.Info

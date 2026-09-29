@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -87,7 +88,8 @@ func TestStatelessCommands(t *testing.T) {
 	e := newEnv(t)
 	cert, key := e.path("host.crt"), e.path("host.key")
 	e.ok("cert", "create", "--cn", "host.example.com", "--san", "10.0.0.1", "-o", cert, "--key-out", key)
-	if st, _ := os.Stat(key); st.Mode().Perm() != 0o600 {
+	// Windows only honours the read-only bit, so Unix modes are not observable.
+	if st, _ := os.Stat(key); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("key mode %v", st.Mode().Perm())
 	}
 

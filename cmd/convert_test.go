@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,7 +18,8 @@ func TestConvertInspectJKS(t *testing.T) {
 
 	p12 := e.path("s.p12")
 	e.ok("convert", cert, key, "--to", "pkcs12", "-o", p12)
-	if st, _ := os.Stat(p12); st.Mode().Perm() != 0o600 {
+	// Windows only honours the read-only bit, so Unix modes are not observable.
+	if st, _ := os.Stat(p12); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("p12 mode %v", st.Mode().Perm())
 	}
 	// Needs the password to look inside.
