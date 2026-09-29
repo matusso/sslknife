@@ -64,6 +64,8 @@ docker_manifests:
 
 brews:
   - name: sslknife
+    # Skip publishing until the tap repo and HOMEBREW_TAP_GITHUB_TOKEN secret exist.
+    skip_upload: '{{ if not .Env.HOMEBREW_TAP_GITHUB_TOKEN }}true{{ end }}'
     repository:
       owner: matusso
       name: homebrew-tap
