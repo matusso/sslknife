@@ -29,6 +29,7 @@ Generate, inspect, store and certify SSH keys
 ### SEE ALSO
 
 * [sslknife](sslknife.md)	 - Swiss-army knife for TLS, certificates, PKI and SSH keys
+* [sslknife ssh agent](sslknife_ssh_agent.md)	 - Load stored SSH keys into ssh-agent, or run a built-in agent
 * [sslknife ssh cert](sslknife_ssh_cert.md)	 - Inspect, sign and create OpenSSH certificates
 * [sslknife ssh convert](sslknife_ssh_convert.md)	 - Convert SSH keys: openssh, pkcs8, pem, ssh (authorized_keys), rfc4716
 * [sslknife ssh delete](sslknife_ssh_delete.md)	 - Delete a stored SSH key

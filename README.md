@@ -101,7 +101,8 @@ sslknife
 ├── tls         inspect scan versions ciphers groups chain alpn ocsp history diff
 ├── ct          watch unwatch list check history ack
 ├── ssh         generate inspect import export list show fingerprint public convert tag
-│   └── cert    inspect sign create
+│   ├── cert    inspect sign create
+│   └── agent   add list remove serve
 ├── jks         inspect list extract convert
 ├── convert     any supported format → any other (with explanations when impossible)
 ├── inspect     detect a file's format and list its contents
@@ -319,6 +320,40 @@ Encrypted private keys are inspected and fingerprinted without the passphrase
 when the format allows it. Imported private keys are stored exactly as the
 file, so a passphrase-protected key stays protected inside the vault. RSA SSH
 CAs sign with `rsa-sha2-512`, never SHA-1.
+
+### Using stored keys with ssh
+
+`ssh agent` puts keys from the vault into an SSH agent, so `ssh`, `git`,
+`scp` or Ansible can use them without the private key ever being written to
+disk:
+
+```console
+$ sslknife ssh agent add deploy-key --lifetime 8h     # into the running ssh-agent ($SSH_AUTH_SOCK)
+$ sslknife ssh agent add --tag servers --confirm      # ask (ssh-askpass) before each use
+$ sslknife ssh agent list
+$ sslknife ssh agent remove deploy-key                # or --all
+
+$ sslknife ssh agent serve deploy-key -- ssh deploy@web01   # built-in agent for one command
+$ sslknife ssh agent serve --tag prod -- ansible-playbook site.yml
+```
+
+Without a command, `serve` runs until interrupted. With a fixed socket, ssh
+can use it for chosen hosts through `~/.ssh/config`:
+
+```console
+$ sslknife ssh agent serve --all --socket ~/.ssh/sslknife-agent.sock --lifetime 8h
+```
+
+```
+Host *.example.com
+    IdentityAgent ~/.ssh/sslknife-agent.sock
+```
+
+Passphrase-protected keys are decrypted with `--passphrase-file`,
+`$SSLKNIFE_SSH_PASSPHRASE` or a prompt, and a passphrase that opened one key
+is tried on the next. A `<key>-cert.pub` next to a key file is loaded with it,
+as `ssh-add` does; `--cert` attaches certificates to stored keys. The agent
+socket is created with mode 0600.
 
 ## Server mode
 
