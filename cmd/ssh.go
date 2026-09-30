@@ -34,7 +34,7 @@ func newSSHCmd(a *app) *cobra.Command {
 	}
 	cmd.AddCommand(newSSHGenerateCmd(a), newSSHInspectCmd(a), newSSHImportCmd(a), newSSHListCmd(a), newSSHShowCmd(a),
 		newSSHExportCmd(a), newSSHDeleteCmd(a), newSSHFingerprintCmd(a), newSSHPublicCmd(a), newSSHConvertCmd(a),
-		newSSHTagCmd(a), newSSHCertCmd(a))
+		newSSHTagCmd(a), newSSHCertCmd(a), newSSHAgentCmd(a))
 	return cmd
 }
 

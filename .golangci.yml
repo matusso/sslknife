@@ -13,11 +13,14 @@ linters:
         - (io.Closer).Close
         - (*os.File).Close
         - (net.Conn).Close
+        - (net.Listener).Close
+        - (*github.com/matusso/sslknife/internal/sshagent.Client).Close
         - (*crypto/tls.Conn).Close
         - (*database/sql.DB).Close
         - (*database/sql.Rows).Close
         - (*github.com/matusso/sslknife/internal/database.DB).Close
         - os.Remove
+        - os.RemoveAll
         # Terminal/diagnostic output: a failed write to stderr cannot be reported anywhere.
         - fmt.Fprint
         - fmt.Fprintf
