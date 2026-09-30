@@ -19,7 +19,7 @@ func TestKeyFileRoundTrip(t *testing.T) {
 	if _, err := kf.AddPasswordSlot(root, []byte("correct horse"), fastKDF); err != nil {
 		t.Fatal(err)
 	}
-	krID, err := kf.AddKeyringSlot(root, kr)
+	krID, err := kf.AddKeyringSlot(root, kr, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,18 +48,78 @@ func TestKeyFileRoundTrip(t *testing.T) {
 	if _, err := kf2.UnlockPassword([]byte("wrong")); !errors.Is(err, ErrBadPassword) {
 		t.Fatal("wrong password accepted", err)
 	}
-	got, err = kf2.UnlockKeyring(kr)
+	got, _, err = kf2.UnlockKeyring(kr, nil)
 	if err != nil || !bytes.Equal(got, root) {
 		t.Fatal("keyring unlock failed", err)
 	}
 	if err := kf2.RemoveSlot(krID, kr); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := kf2.UnlockKeyring(kr); err == nil {
+	if _, _, err := kf2.UnlockKeyring(kr, nil); err == nil {
 		t.Fatal("removed slot still unlocks")
 	}
 	if err := kf2.RemoveSlot(kf2.Slots[0].ID, kr); err == nil {
 		t.Fatal("removed last slot")
+	}
+}
+
+func TestTouchIDSlot(t *testing.T) {
+	kf, root := NewKeyFile()
+	kr := &MemoryKeyring{}
+	if _, err := kf.AddKeyringSlot(root, kr, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := kf.UnlockKeyring(kr, nil); !errors.Is(err, ErrPresenceUnavailable) {
+		t.Fatal("Touch ID slot opened without confirmation", err)
+	}
+	if _, _, err := kf.UnlockKeyring(kr, func() error { return ErrPresenceDenied }); !errors.Is(err, ErrPresenceDenied) {
+		t.Fatal("denied confirmation accepted", err)
+	}
+	calls := 0
+	got, touchID, err := kf.UnlockKeyring(kr, func() error { calls++; return nil })
+	if err != nil || !touchID || calls != 1 || !bytes.Equal(got, root) {
+		t.Fatal("Touch ID unlock failed", err, touchID, calls)
+	}
+
+	// A plain keychain slot is preferred and needs no confirmation.
+	if _, err := kf.AddKeyringSlot(root, kr, false); err != nil {
+		t.Fatal(err)
+	}
+	calls = 0
+	if _, touchID, err := kf.UnlockKeyring(kr, func() error { calls++; return nil }); err != nil || touchID || calls != 0 {
+		t.Fatal("plain slot not preferred", err, touchID, calls)
+	}
+}
+
+func TestUnlockerCacheAndTouchID(t *testing.T) {
+	kf, root := NewKeyFile()
+	kr := &MemoryKeyring{}
+	if _, err := kf.AddPasswordSlot(root, []byte("pw"), fastKDF); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kf.AddKeyringSlot(root, kr, true); err != nil {
+		t.Fatal(err)
+	}
+	noEnv := func(string) string { return "" }
+	u := Unlocker{Getenv: noEnv, Keyring: kr, Presence: func() error { return nil },
+		Cache: func(id string) ([]byte, error) {
+			if id != kf.DBID {
+				t.Fatal("cache asked for the wrong vault")
+			}
+			return root, nil
+		}}
+	if _, m, err := u.Unlock(kf); err != nil || m != MethodCache {
+		t.Fatal(m, err)
+	}
+	u.Cache = func(string) ([]byte, error) { return nil, errors.New("not cached") }
+	if _, m, err := u.Unlock(kf); err != nil || m != MethodTouchID {
+		t.Fatal(m, err)
+	}
+	// A cancelled Touch ID sheet falls back to the password prompt.
+	u.Presence = func() error { return ErrPresenceDenied }
+	u.Prompt = func() ([]byte, error) { return []byte("pw"), nil }
+	if _, m, err := u.Unlock(kf); err != nil || m != MethodPrompt {
+		t.Fatal(m, err)
 	}
 }
 

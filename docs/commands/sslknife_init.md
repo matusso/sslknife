@@ -8,7 +8,9 @@ Create the encrypted database and its key file.
 
 A random 256-bit root key encrypts the database. The root key is stored only
 in wrapped form, protected by your password (Argon2id) and optionally by the
-OS keychain so that everyday commands do not prompt.
+OS keychain so that everyday commands do not prompt. On macOS, --touch-id
+stores the keychain key so that it is used only after you confirm with
+Touch ID or Apple Watch.
 
 The password is read from the terminal, or from SSLKNIFE_PASSWORD /
 SSLKNIFE_PASSWORD_FILE for automation. It is never accepted as a flag.
@@ -22,6 +24,7 @@ sslknife init [flags]
 ```
   sslknife init
   sslknife init --keychain
+  sslknife init --touch-id
   SSLKNIFE_PASSWORD_FILE=/run/secrets/sslknife sslknife init
 ```
 
@@ -31,6 +34,7 @@ sslknife init [flags]
   -h, --help            help for init
       --keychain        also store an unlock key in the OS keychain
       --keychain-only   protect the vault with the OS keychain only (no password)
+      --touch-id        also store an unlock key in the macOS keychain that needs Touch ID or Apple Watch
 ```
 
 ### Options inherited from parent commands

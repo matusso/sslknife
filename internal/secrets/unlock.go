@@ -17,17 +17,22 @@ const (
 var ErrLocked = errors.New("vault is locked: set " + EnvPassword + " or " + EnvPasswordFile + ", or run in a terminal")
 
 // Unlocker tries the configured unlock methods in order: environment,
-// keychain, interactive prompt.
+// unlock cache, keychain (plain, then Touch ID), interactive prompt.
 type Unlocker struct {
 	Getenv  func(string) string
-	Keyring Keyring                // nil disables keychain unlocking
-	Prompt  func() ([]byte, error) // nil disables prompting
+	Cache   func(dbID string) ([]byte, error) // nil disables the unlock cache
+	Keyring Keyring                           // nil disables keychain unlocking
+	// Presence confirms the user for Touch ID keychain slots; nil skips them.
+	Presence func() error
+	Prompt   func() ([]byte, error) // nil disables prompting
 }
 
 // Method names reported by Unlock.
 const (
 	MethodEnv     = "environment"
+	MethodCache   = "cache"
 	MethodKeyring = "keychain"
+	MethodTouchID = "touch-id"
 	MethodPrompt  = "password"
 )
 
@@ -61,10 +66,18 @@ func (u Unlocker) Unlock(kf *KeyFile) ([]byte, string, error) {
 		clear(pw)
 		return root, MethodEnv, err
 	}
+	if u.Cache != nil {
+		if root, err := u.Cache(kf.DBID); err == nil && len(root) > 0 {
+			return root, MethodCache, nil
+		}
+	}
 	var keyringErr error
 	if u.Keyring != nil && kf.HasSlot(SlotKeyring) {
-		root, err := kf.UnlockKeyring(u.Keyring)
+		root, touchID, err := kf.UnlockKeyring(u.Keyring, u.Presence)
 		if err == nil {
+			if touchID {
+				return root, MethodTouchID, nil
+			}
 			return root, MethodKeyring, nil
 		}
 		keyringErr = err

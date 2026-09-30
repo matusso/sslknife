@@ -16,6 +16,7 @@ import (
 	"github.com/matusso/sslknife/internal/database"
 	"github.com/matusso/sslknife/internal/exitcode"
 	"github.com/matusso/sslknife/internal/inventory"
+	"github.com/matusso/sslknife/internal/keycache"
 	"github.com/matusso/sslknife/internal/output"
 	"github.com/matusso/sslknife/internal/secrets"
 )
@@ -57,26 +58,14 @@ func (a *app) requireVault(ctx context.Context) (*vault, error) {
 		return a.vault, nil
 	}
 	path := a.cfg.Database.Path
-	keyPath := database.KeyFilePath(path)
-	if !database.Exists(path) {
-		return nil, exitcode.New(exitcode.NotFound, "no SSLKnife vault at %s; run 'sslknife init' first", path)
-	}
-	kf, err := secrets.LoadKeyFile(keyPath)
+	kf, keyPath, err := a.loadKeyFile()
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, exitcode.New(exitcode.Auth, "key file %s is missing; the database cannot be decrypted without it", keyPath)
-		}
 		return nil, err
 	}
-	u := secrets.Unlocker{Getenv: os.Getenv, Keyring: a.keyring()}
-	if a.prompt.Interactive() {
-		u.Prompt = func() ([]byte, error) { return a.prompt.Password("Vault password") }
-	}
-	root, method, err := u.Unlock(kf)
+	root, method, err := a.unlockRoot(kf, true)
 	if err != nil {
-		return nil, exitcode.With(exitcode.Auth, err)
+		return nil, err
 	}
-	a.log.Debug("vault unlocked", "method", method)
 	db, err := database.Open(ctx, path, root)
 	if err != nil {
 		skcrypto.Zero(root)
@@ -90,6 +79,61 @@ func (a *app) requireVault(ctx context.Context) (*vault, error) {
 	}
 	a.vault.changes, _ = db.TotalChanges(ctx)
 	return a.vault, nil
+}
+
+// loadKeyFile reads the key file of the configured vault.
+func (a *app) loadKeyFile() (*secrets.KeyFile, string, error) {
+	path := a.cfg.Database.Path
+	keyPath := database.KeyFilePath(path)
+	if !database.Exists(path) {
+		return nil, "", exitcode.New(exitcode.NotFound, "no SSLKnife vault at %s; run 'sslknife init' first", path)
+	}
+	kf, err := secrets.LoadKeyFile(keyPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, "", exitcode.New(exitcode.Auth, "key file %s is missing; the database cannot be decrypted without it", keyPath)
+		}
+		return nil, "", err
+	}
+	return kf, keyPath, nil
+}
+
+// touchIDReason completes the system sheet's "sslknife is trying to ...".
+const touchIDReason = "unlock the SSLKnife vault"
+
+// unlockRoot returns the root key and the method that unlocked it. With
+// autoCache, a password or Touch ID unlock starts the unlock cache when
+// vault.unlock_cache is set.
+func (a *app) unlockRoot(kf *secrets.KeyFile, autoCache bool) ([]byte, string, error) {
+	u := secrets.Unlocker{Getenv: os.Getenv, Keyring: a.keyring(), Cache: keycache.Get}
+	// Neither the prompt nor the Touch ID sheet may appear without a
+	// terminal, e.g. during shell completion.
+	if a.prompt.Interactive() {
+		u.Prompt = func() ([]byte, error) { return a.prompt.Password("Vault password") }
+		u.Presence = func() error { return secrets.ConfirmPresence(touchIDReason) }
+	}
+	root, method, err := u.Unlock(kf)
+	if err != nil {
+		return nil, "", exitcode.With(exitcode.Auth, err)
+	}
+	a.log.Debug("vault unlocked", "method", method)
+	ttl := a.cfg.Vault.UnlockCache.D()
+	if autoCache && ttl > 0 && keycache.Supported && (method == secrets.MethodPrompt || method == secrets.MethodTouchID) {
+		if err := a.startUnlockCache(kf.DBID, root, ttl); err != nil {
+			a.out.Warnf("could not start the unlock cache: %v", err)
+		}
+	}
+	return root, method, nil
+}
+
+// startUnlockCache runs 'sslknife vault cache-daemon' in the background to
+// hold root for ttl after its last use.
+func (a *app) startUnlockCache(dbID string, root []byte, ttl time.Duration) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	return keycache.Start(exe, []string{"vault", "cache-daemon"}, dbID, root, ttl)
 }
 
 // checkPermissions warns when vault files or their directory are readable
@@ -131,7 +175,7 @@ func (a *app) newPassword() ([]byte, error) {
 }
 
 func newInitCmd(a *app) *cobra.Command {
-	var keychain, keychainOnly bool
+	var keychain, keychainOnly, touchID bool
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Create the encrypted SSLKnife vault",
@@ -139,12 +183,15 @@ func newInitCmd(a *app) *cobra.Command {
 
 A random 256-bit root key encrypts the database. The root key is stored only
 in wrapped form, protected by your password (Argon2id) and optionally by the
-OS keychain so that everyday commands do not prompt.
+OS keychain so that everyday commands do not prompt. On macOS, --touch-id
+stores the keychain key so that it is used only after you confirm with
+Touch ID or Apple Watch.
 
 The password is read from the terminal, or from SSLKNIFE_PASSWORD /
 SSLKNIFE_PASSWORD_FILE for automation. It is never accepted as a flag.`,
 		Example: `  sslknife init
   sslknife init --keychain
+  sslknife init --touch-id
   SSLKNIFE_PASSWORD_FILE=/run/secrets/sslknife sslknife init`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -152,6 +199,11 @@ SSLKNIFE_PASSWORD_FILE for automation. It is never accepted as a flag.`,
 			keyPath := database.KeyFilePath(path)
 			if database.Exists(path) || database.Exists(keyPath) {
 				return exitcode.New(exitcode.Usage, "a vault already exists at %s", path)
+			}
+			if touchID {
+				if err := secrets.PresenceAvailable(); err != nil {
+					return exitcode.With(exitcode.Usage, err)
+				}
 			}
 			kf, root := secrets.NewKeyFile()
 			defer skcrypto.Zero(root)
@@ -166,12 +218,12 @@ SSLKNIFE_PASSWORD_FILE for automation. It is never accepted as a flag.`,
 					return err
 				}
 			}
-			if keychain || keychainOnly {
+			if keychain || keychainOnly || touchID {
 				kr := a.keyring()
 				if kr == nil {
 					return exitcode.New(exitcode.Usage, "keychain disabled by %s", EnvNoKeyring)
 				}
-				if _, err := kf.AddKeyringSlot(root, kr); err != nil {
+				if _, err := kf.AddKeyringSlot(root, kr, touchID); err != nil {
 					return err
 				}
 				if keychainOnly {
@@ -197,7 +249,8 @@ SSLKNIFE_PASSWORD_FILE for automation. It is never accepted as a flag.`,
 	}
 	cmd.Flags().BoolVar(&keychain, "keychain", false, "also store an unlock key in the OS keychain")
 	cmd.Flags().BoolVar(&keychainOnly, "keychain-only", false, "protect the vault with the OS keychain only (no password)")
-	cmd.MarkFlagsMutuallyExclusive("keychain", "keychain-only")
+	cmd.Flags().BoolVar(&touchID, "touch-id", false, "also store an unlock key in the macOS keychain that needs Touch ID or Apple Watch")
+	cmd.MarkFlagsMutuallyExclusive("keychain", "keychain-only", "touch-id")
 	return cmd
 }
 
@@ -217,6 +270,9 @@ func slotViews(kf *secrets.KeyFile) []slotView {
 		}
 		if s.Keyring != nil {
 			v.Detail = "service=" + s.Keyring.Service
+			if s.TouchID {
+				v.Detail += " touch-id"
+			}
 		}
 		out = append(out, v)
 	}
@@ -249,10 +305,15 @@ func newVaultCmd(a *app) *cobra.Command {
 				"database": v.db.Path(), "key_file": v.keyPath, "db_id": v.kf.DBID, "schema_version": ver,
 				"unlocked_by": v.method, "slots": slotViews(v.kf), "counts": st,
 			}
+			cache := "off"
+			if exp, err := keycache.Status(v.kf.DBID); err == nil {
+				view["unlock_cache_expires"] = exp
+				cache = "unlocked until " + exp.Local().Format("15:04:05") + " (extended on use)"
+			}
 			return a.out.Emit(view, func(w io.Writer) error {
 				kv := output.NewKV(a.out.Style)
 				kv.Add("Database", v.db.Path()).Add("Key file", v.keyPath).Add("Vault ID", v.kf.DBID).
-					Addf("Schema", "%d", ver).Add("Unlocked by", v.method)
+					Addf("Schema", "%d", ver).Add("Unlocked by", v.method).Add("Unlock cache", cache)
 				kv.Heading("Keyslots")
 				for _, s := range slotViews(v.kf) {
 					kv.Add(s.ID, s.Type+"  "+s.Detail)
@@ -286,25 +347,51 @@ func newVaultCmd(a *app) *cobra.Command {
 			})
 		},
 	})
-	cmd.AddCommand(&cobra.Command{
+	var touchID bool
+	addKeychain := &cobra.Command{
 		Use:   "add-keychain",
 		Short: "Store an unlock key in the OS keychain",
-		Args:  cobra.NoArgs,
+		Long: `Store an unlock key in the OS keychain so commands do not ask for the
+password.
+
+With --touch-id (macOS) the key is used only after you confirm with Touch ID,
+a paired Apple Watch or, when neither is available, your login password.
+This is a presence check made by sslknife: the keychain item itself is as
+readable by your user account as a plain keychain slot.`,
+		Example: `  sslknife vault add-keychain
+  sslknife vault add-keychain --touch-id`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return a.withRoot(cmd.Context(), func(v *vault, root []byte) error {
 				kr := a.keyring()
 				if kr == nil {
 					return exitcode.New(exitcode.Usage, "keychain disabled by %s", EnvNoKeyring)
 				}
-				id, err := v.kf.AddKeyringSlot(root, kr)
+				if touchID {
+					// Prove the sheet works before relying on it.
+					if err := secrets.ConfirmPresence("add a Touch ID unlock key to the SSLKnife vault"); err != nil {
+						return exitcode.With(exitcode.Usage, err)
+					}
+				}
+				id, err := v.kf.AddKeyringSlot(root, kr, touchID)
 				if err != nil {
 					return err
 				}
-				a.out.Infof("Added keychain keyslot %s", id)
+				if touchID {
+					a.out.Infof("Added Touch ID keychain keyslot %s", id)
+					if v.kf.HasPlainKeyring() {
+						a.out.Warnf("a keychain keyslot without Touch ID still unlocks the vault silently; remove it with 'sslknife vault remove-slot'")
+					}
+				} else {
+					a.out.Infof("Added keychain keyslot %s", id)
+				}
 				return v.kf.Save(v.keyPath)
 			})
 		},
-	})
+	}
+	addKeychain.Flags().BoolVar(&touchID, "touch-id", false, "require Touch ID or Apple Watch to use the key (macOS)")
+	cmd.AddCommand(addKeychain)
+	cmd.AddCommand(newVaultUnlockCmd(a), newVaultLockCmd(a), newVaultCacheDaemonCmd())
 	cmd.AddCommand(&cobra.Command{
 		Use:   "remove-slot <slot-id>",
 		Short: "Remove a keyslot (the last slot cannot be removed)",

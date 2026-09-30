@@ -44,8 +44,11 @@ type Slot struct {
 	Created time.Time   `json:"created"`
 	KDF     *KDF        `json:"kdf,omitempty"`
 	Keyring *KeyringRef `json:"keyring,omitempty"`
-	Nonce   []byte      `json:"nonce"`
-	Wrapped []byte      `json:"wrapped"`
+	// TouchID makes a keychain slot usable only after the user confirms
+	// with Touch ID or Apple Watch (macOS).
+	TouchID bool   `json:"touch_id,omitempty"`
+	Nonce   []byte `json:"nonce"`
+	Wrapped []byte `json:"wrapped"`
 }
 
 // KDF describes how a password slot's KEK is derived.
@@ -106,8 +109,9 @@ func (kf *KeyFile) AddPasswordSlot(root, password []byte, params skcrypto.Argon2
 	return s.ID, kf.wrap(s, kek, root)
 }
 
-// AddKeyringSlot stores a random KEK in the OS keychain and wraps root under it.
-func (kf *KeyFile) AddKeyringSlot(root []byte, kr Keyring) (string, error) {
+// AddKeyringSlot stores a random KEK in the OS keychain and wraps root under
+// it. With touchID the slot is only used after ConfirmPresence succeeds.
+func (kf *KeyFile) AddKeyringSlot(root []byte, kr Keyring, touchID bool) (string, error) {
 	kek := skcrypto.RandomBytes(skcrypto.KeySize)
 	defer skcrypto.Zero(kek)
 	s := &Slot{
@@ -115,6 +119,7 @@ func (kf *KeyFile) AddKeyringSlot(root []byte, kr Keyring) (string, error) {
 		Type:    SlotKeyring,
 		Created: time.Now().UTC().Truncate(time.Second),
 		Keyring: &KeyringRef{Service: KeyringService, Account: kf.DBID + "/" + skcrypto.NewID()},
+		TouchID: touchID,
 	}
 	if err := kr.Set(s.Keyring.Service, s.Keyring.Account, kek); err != nil {
 		return "", fmt.Errorf("store key in OS keychain: %w", err)
@@ -147,33 +152,58 @@ func (kf *KeyFile) UnlockPassword(password []byte) ([]byte, error) {
 	return nil, ErrBadPassword
 }
 
-// UnlockKeyring tries every keychain slot.
-func (kf *KeyFile) UnlockKeyring(kr Keyring) ([]byte, error) {
+// UnlockKeyring tries every keychain slot, plain slots first. Touch ID
+// slots are tried only after confirm succeeds; confirm is called at most
+// once, and a nil confirm skips them. touchID reports which kind worked.
+func (kf *KeyFile) UnlockKeyring(kr Keyring, confirm func() error) (root []byte, touchID bool, err error) {
 	lastErr := ErrNoSlot
-	for i := range kf.Slots {
-		s := &kf.Slots[i]
-		if s.Type != SlotKeyring || s.Keyring == nil {
-			continue
+	confirmed := false
+	for _, wantTouchID := range []bool{false, true} {
+		for i := range kf.Slots {
+			s := &kf.Slots[i]
+			if s.Type != SlotKeyring || s.Keyring == nil || s.TouchID != wantTouchID {
+				continue
+			}
+			if s.TouchID && !confirmed {
+				if confirm == nil {
+					lastErr = ErrPresenceUnavailable
+					continue
+				}
+				if err := confirm(); err != nil {
+					return nil, false, err
+				}
+				confirmed = true
+			}
+			kek, err := kr.Get(s.Keyring.Service, s.Keyring.Account)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			root, err := kf.unwrap(s, kek)
+			skcrypto.Zero(kek)
+			if err == nil {
+				return root, s.TouchID, nil
+			}
+			lastErr = fmt.Errorf("keyslot %s: %w", s.ID, err)
 		}
-		kek, err := kr.Get(s.Keyring.Service, s.Keyring.Account)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		root, err := kf.unwrap(s, kek)
-		skcrypto.Zero(kek)
-		if err == nil {
-			return root, nil
-		}
-		lastErr = fmt.Errorf("keyslot %s: %w", s.ID, err)
 	}
-	return nil, lastErr
+	return nil, false, lastErr
 }
 
 // HasSlot reports whether a slot of type exists.
 func (kf *KeyFile) HasSlot(typ string) bool {
 	for _, s := range kf.Slots {
 		if s.Type == typ {
+			return true
+		}
+	}
+	return false
+}
+
+// HasPlainKeyring reports whether a keychain slot without Touch ID exists.
+func (kf *KeyFile) HasPlainKeyring() bool {
+	for _, s := range kf.Slots {
+		if s.Type == SlotKeyring && !s.TouchID {
 			return true
 		}
 	}

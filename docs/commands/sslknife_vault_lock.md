@@ -1,33 +1,15 @@
-## sslknife vault add-keychain
+## sslknife vault lock
 
-Store an unlock key in the OS keychain
-
-### Synopsis
-
-Store an unlock key in the OS keychain so commands do not ask for the
-password.
-
-With --touch-id (macOS) the key is used only after you confirm with Touch ID,
-a paired Apple Watch or, when neither is available, your login password.
-This is a presence check made by sslknife: the keychain item itself is as
-readable by your user account as a plain keychain slot.
+Forget the cached vault key started by 'vault unlock'
 
 ```
-sslknife vault add-keychain [flags]
-```
-
-### Examples
-
-```
-  sslknife vault add-keychain
-  sslknife vault add-keychain --touch-id
+sslknife vault lock [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help       help for add-keychain
-      --touch-id   require Touch ID or Apple Watch to use the key (macOS)
+  -h, --help   help for lock
 ```
 
 ### Options inherited from parent commands
