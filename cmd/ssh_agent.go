@@ -317,7 +317,7 @@ func newSSHAgentAddCmd(a *app) *cobra.Command {
 					if err := c.Add(ak); err != nil {
 						return fmt.Errorf("add %s to the agent: %w", k.label, err)
 					}
-					var pub ssh.PublicKey = k.item.Public
+					pub := k.item.Public
 					if ak.Certificate != nil {
 						pub = ak.Certificate
 					}
@@ -566,7 +566,7 @@ func (a *app) runWithAgent(l net.Listener, kr agent.Agent, path string, command 
 	done := make(chan error, 1)
 	go func() { done <- sshagent.Serve(ctx, l, kr) }()
 
-	c := exec.Command(command[0], command[1:]...)
+	c := exec.Command(command[0], command[1:]...) //nolint:gosec // runs the command the user asked for
 	c.Env = append(os.Environ(), sshagent.EnvSocket+"="+path)
 	c.Stdin, c.Stdout, c.Stderr = a.stdin, a.stdout, a.stderr
 	err := c.Run()
@@ -600,7 +600,7 @@ func exportLine(path string) string {
 
 func shellQuote(s string) string {
 	if s != "" && strings.IndexFunc(s, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("/._-+:@%", r))
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && !strings.ContainsRune("/._-+:@%", r)
 	}) < 0 {
 		return s
 	}

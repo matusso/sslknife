@@ -38,7 +38,7 @@ func Dial(socket string) (*Client, error) {
 	if socket == "" {
 		return nil, ErrNoAgent
 	}
-	conn, err := net.Dial("unix", socket)
+	conn, err := net.Dial("unix", socket) //nolint:gosec // local agent socket chosen by the user
 	if err != nil {
 		return nil, fmt.Errorf("connect to ssh-agent at %s: %w", socket, err)
 	}
