@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"golang.org/x/crypto/ssh/agent"
@@ -22,7 +23,7 @@ func TestServeAndDial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st, err := os.Stat(filepath.Dir(path)); err != nil || st.Mode().Perm() != 0o700 {
+	if st, err := os.Stat(filepath.Dir(path)); err != nil || runtime.GOOS != "windows" && st.Mode().Perm() != 0o700 {
 		t.Fatalf("socket directory: %v %v", st.Mode(), err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
