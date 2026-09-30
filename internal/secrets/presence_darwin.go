@@ -15,7 +15,7 @@ const laPolicyDeviceOwnerAuthentication = 2
 var loadLocalAuthentication = sync.OnceValue(func() error {
 	_, err := purego.Dlopen("/System/Library/Frameworks/LocalAuthentication.framework/LocalAuthentication", purego.RTLD_GLOBAL|purego.RTLD_NOW)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrPresenceUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrPresenceUnavailable, err)
 	}
 	return nil
 })
@@ -29,7 +29,7 @@ func PresenceAvailable() error {
 	defer ctx.Send(objc.RegisterName("release"))
 	var nserr objc.ID
 	if !objc.Send[bool](ctx, objc.RegisterName("canEvaluatePolicy:error:"), laPolicyDeviceOwnerAuthentication, &nserr) {
-		return fmt.Errorf("Touch ID is not available: %s", errorDescription(nserr))
+		return fmt.Errorf("presence confirmation with Touch ID is not available: %s", errorDescription(nserr))
 	}
 	return nil
 }

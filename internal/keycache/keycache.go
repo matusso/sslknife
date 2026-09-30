@@ -53,10 +53,10 @@ func socketDir() (string, error) {
 		base = os.TempDir()
 	}
 	dir := filepath.Join(base, fmt.Sprintf("sslknife-%d", os.Getuid()))
-	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) { //nolint:gosec // trusted per-user path
 		return "", err
 	}
-	st, err := os.Lstat(dir)
+	st, err := os.Lstat(dir) //nolint:gosec // trusted per-user path
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +140,7 @@ type payload struct {
 // command must call RunDaemon.
 func Start(exe string, args []string, dbID string, root []byte, idle time.Duration) error {
 	_ = Lock(dbID)
-	cmd := exec.Command(exe, args...)
+	cmd := exec.Command(exe, args...) //nolint:gosec // re-executes our own binary
 	cmd.Dir = "/"
 	cmd.Env = daemonEnv()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -233,7 +233,7 @@ func RunDaemon(in io.Reader, out io.Writer) error {
 		fmt.Fprintln(out, err)
 		return err
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	if err := os.Chmod(path, 0o600); err != nil {
 		fmt.Fprintln(out, err)
 		return err
@@ -250,7 +250,7 @@ func RunDaemon(in io.Reader, out io.Writer) error {
 func Serve(l net.Listener, dbID string, root []byte, idle time.Duration) error {
 	var mu sync.Mutex
 	expires := time.Now().Add(idle)
-	timer := time.AfterFunc(idle, func() { l.Close() })
+	timer := time.AfterFunc(idle, func() { _ = l.Close() })
 	defer timer.Stop()
 	for {
 		conn, err := l.Accept()
