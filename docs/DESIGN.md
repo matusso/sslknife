@@ -73,7 +73,8 @@ internal/
   logging/                   slog setup with secret redaction
   prompt/                    TTY prompts: confirm, password, choice
   crypto/                    AEAD helpers, KDF, zeroize, random IDs
-  secrets/                   keyslot file, unlock providers (env, keyring, TTY)
+  secrets/                   keyslot file, unlock providers (env, keyring, Touch ID, TTY)
+  keycache/                  background unlock cache (vault unlock / lock)
   database/                  encrypted SQLite open, migrations, repositories
   certificate/               parse, describe, fingerprints, create, lint, diff, chains
   keys/                      private/public key parse, generate, match, PKCS#8 (PBES2)
@@ -145,9 +146,29 @@ The RK is never stored in plaintext. Keyslots wrap it, the same way LUKS does:
   wrapped = AES-256-GCM(KEK, RK, aad="sslknife-keyslot-v1|<db-id>|<slot-id>").
 * `keyring` slot: a random 32-byte KEK stored in the OS keychain under
   service `sslknife`, account `<db-id>`. Wrapping is the same as above.
+  With `touch_id: true` (macOS) the slot is used only after
+  LocalAuthentication's `LAPolicyDeviceOwnerAuthentication` succeeds (Touch
+  ID, Apple Watch, or the login password), called through purego so builds
+  stay `CGO_ENABLED=0`. It is a presence check enforced by sslknife: the
+  keychain item is written by `/usr/bin/security` and stays readable by any
+  process of the same user, exactly like a plain keyring slot. Plain slots
+  are tried first, so adding one bypasses Touch ID.
 
-Unlock order: `SSLKNIFE_PASSWORD` / `SSLKNIFE_PASSWORD_FILE` → keyring slot →
-TTY password prompt. A failed GCM open means a wrong password; no separate
+Unlock order: `SSLKNIFE_PASSWORD` / `SSLKNIFE_PASSWORD_FILE` → unlock cache →
+keyring slot (plain, then Touch ID) → TTY password prompt. The Touch ID sheet
+and the prompt only appear with a terminal attached, so shell completion
+never blocks on them.
+
+**Unlock cache** (`internal/keycache`, not on Windows). `vault unlock`, or a
+password / Touch ID unlock with `vault.unlock_cache` set, starts a detached
+`sslknife vault cache-daemon` that receives the RK over a pipe, `mlock`s it
+and serves it on `$XDG_RUNTIME_DIR` or `$TMPDIR` `/sslknife-<uid>/<hash of
+db-id>.sock`. The directory must be 0700 and owned by the user; the socket is
+0600, and on macOS and Linux the peer's uid is checked (`LOCAL_PEERCRED`,
+`SO_PEERCRED`). Every `get` extends the idle timer; when it fires, or on
+`vault lock`, the process zeroes the key and exits. Anyone who can run code
+as the user can read the RK while the cache is running, the same exposure as
+a plain keyring slot. A failed GCM open means a wrong password; no separate
 verifier is stored.
 
 **Page encryption and integrity.** The Adiantum VFS encrypts each 4 KiB page

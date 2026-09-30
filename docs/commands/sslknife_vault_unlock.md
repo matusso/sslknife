@@ -1,33 +1,37 @@
-## sslknife vault add-keychain
+## sslknife vault unlock
 
-Store an unlock key in the OS keychain
+Keep the vault unlocked for a while, so commands do not ask again
 
 ### Synopsis
 
-Store an unlock key in the OS keychain so commands do not ask for the
-password.
+Unlock the vault once and keep it unlocked in a background process, like
+sudo's timestamp. Every command that uses the cached key extends the time;
+'sslknife vault lock' ends it at once.
 
-With --touch-id (macOS) the key is used only after you confirm with Touch ID,
-a paired Apple Watch or, when neither is available, your login password.
-This is a presence check made by sslknife: the keychain item itself is as
-readable by your user account as a plain keychain slot.
+The root key stays only in that process's memory (locked against swapping
+where possible) and is handed out over a Unix socket in a private directory,
+to processes running as your user.
+
+Set vault.unlock_cache in the config to start the cache automatically
+whenever a command asks for the password or Touch ID.
 
 ```
-sslknife vault add-keychain [flags]
+sslknife vault unlock [flags]
 ```
 
 ### Examples
 
 ```
-  sslknife vault add-keychain
-  sslknife vault add-keychain --touch-id
+  sslknife vault unlock
+  sslknife vault unlock --for 1h
+  sslknife vault lock
 ```
 
 ### Options
 
 ```
-  -h, --help       help for add-keychain
-      --touch-id   require Touch ID or Apple Watch to use the key (macOS)
+      --for string   idle time before locking again, e.g. 30m, 8h (default vault.unlock_cache or 15m)
+  -h, --help         help for unlock
 ```
 
 ### Options inherited from parent commands

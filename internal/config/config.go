@@ -20,6 +20,7 @@ import (
 // database password comes from the TTY, the OS keychain or the environment.
 type Config struct {
 	Database DatabaseConfig `yaml:"database"`
+	Vault    VaultConfig    `yaml:"vault"`
 	TLS      TLSConfig      `yaml:"tls"`
 	CT       CTConfig       `yaml:"ct"`
 	Server   ServerConfig   `yaml:"server"`
@@ -29,6 +30,13 @@ type Config struct {
 
 type DatabaseConfig struct {
 	Path string `yaml:"path"`
+}
+
+type VaultConfig struct {
+	// UnlockCache keeps the vault unlocked in a background process for this
+	// long after its last use, once a password or Touch ID unlocked it
+	// (0 disables).
+	UnlockCache Duration `yaml:"unlock_cache"`
 }
 
 type TLSConfig struct {
@@ -142,6 +150,9 @@ func Load(path string, mustExist bool) (*Config, error) {
 func (c *Config) Validate() error {
 	if c.Database.Path == "" {
 		return errors.New("config: database.path must not be empty")
+	}
+	if c.Vault.UnlockCache.D() < 0 {
+		return errors.New("config: vault.unlock_cache must not be negative")
 	}
 	if c.TLS.Timeout.D() <= 0 {
 		return errors.New("config: tls.timeout must be positive")

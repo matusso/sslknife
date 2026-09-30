@@ -56,7 +56,20 @@ needs a vault:
 ```sh
 sslknife init                  # asks for a vault password (Argon2id-protected)
 sslknife init --keychain       # also store an unlock key in the OS keychain
+sslknife init --touch-id       # macOS: keychain key that needs Touch ID or Apple Watch
 ```
+
+To stop being asked for the password on every command, either add a Touch ID
+keyslot to an existing vault, or keep the vault unlocked for a while:
+
+```sh
+sslknife vault add-keychain --touch-id   # confirm with Touch ID / Apple Watch instead of typing
+sslknife vault unlock --for 30m          # no prompts until 30 minutes after the last use
+sslknife vault lock                      # forget the cached key now
+```
+
+Setting `vault.unlock_cache: 15m` in the config starts that cache
+automatically whenever a command had to ask for the password or Touch ID.
 
 Inspect a certificate, a whole chain, or what a server presents:
 
@@ -109,7 +122,7 @@ sslknife
 ├── fingerprint SHA-256, SHA-1 (legacy) and SPKI fingerprints
 ├── search      query the inventory
 ├── server      local web UI and REST API
-├── vault       status add-password add-keychain remove-slot change-password
+├── vault       status unlock lock add-password add-keychain remove-slot change-password
 ├── remote      sync status login logout forget (share via HashiCorp Vault)
 ├── init        create the vault
 ├── config      show path init
@@ -464,7 +477,12 @@ The full threat model is in [docs/DESIGN.md](docs/DESIGN.md). In short:
   so tampered pages are detected. Private keys are additionally sealed with
   AES-256-GCM, bound to their row.
 - **Key hierarchy.** A random 256-bit root key is wrapped in keyslots:
-  password (Argon2id, 64 MiB), and optionally the OS keychain. For automation,
+  password (Argon2id, 64 MiB), and optionally the OS keychain (on macOS
+  optionally gated by Touch ID or Apple Watch; that gate is a presence check
+  by sslknife, the keychain item is readable by your account either way).
+  `vault unlock` / `vault.unlock_cache` keep the root key in the memory of a
+  background process, served only to your user over a private Unix socket,
+  until it has been idle for the configured time. For automation,
   `SSLKNIFE_PASSWORD` or `SSLKNIFE_PASSWORD_FILE` supply the password. It is
   never accepted as a flag, never stored in the config, never logged.
   `sslknife vault` manages keyslots.
@@ -493,6 +511,8 @@ Default locations (`sslknife config path` prints them):
 ```yaml
 database:
   path: ~/.local/share/sslknife/sslknife.db
+vault:
+  unlock_cache: 0s         # e.g. 15m: stay unlocked after a password/Touch ID unlock
 tls:
   timeout: 10s
   concurrency: 8

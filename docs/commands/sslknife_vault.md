@@ -32,6 +32,8 @@ Manage the encrypted vault and its unlock methods
 * [sslknife vault add-keychain](sslknife_vault_add-keychain.md)	 - Store an unlock key in the OS keychain
 * [sslknife vault add-password](sslknife_vault_add-password.md)	 - Add a password keyslot
 * [sslknife vault change-password](sslknife_vault_change-password.md)	 - Replace all password keyslots with a new password
+* [sslknife vault lock](sslknife_vault_lock.md)	 - Forget the cached vault key started by 'vault unlock'
 * [sslknife vault remove-slot](sslknife_vault_remove-slot.md)	 - Remove a keyslot (the last slot cannot be removed)
 * [sslknife vault status](sslknife_vault_status.md)	 - Show vault location, keyslots and contents
+* [sslknife vault unlock](sslknife_vault_unlock.md)	 - Keep the vault unlocked for a while, so commands do not ask again
 
