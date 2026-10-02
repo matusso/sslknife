@@ -29,7 +29,7 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
-    files: [README.md, LICENSE, docs/DESIGN.md]
+    files: [README.md, LICENSE, docs/*.md]
 
 checksum:
   name_template: checksums.txt
@@ -70,6 +70,11 @@ brews:
       owner: matusso
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    commit_author:
+      name: github-actions[bot]
+      email: 41898282+github-actions[bot]@users.noreply.github.com
+    commit_msg_template: "sslknife {{ .Tag }}"
     homepage: https://github.com/matusso/sslknife
     description: Swiss-army knife for TLS, certificates, PKI and SSH keys
     license: MIT
