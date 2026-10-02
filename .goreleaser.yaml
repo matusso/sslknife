@@ -29,7 +29,7 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
-    files: [README.md, LICENSE, docs/DESIGN.md]
+    files: [README.md, LICENSE, docs/*.md]
 
 checksum:
   name_template: checksums.txt
