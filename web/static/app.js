@@ -583,7 +583,7 @@ window.addEventListener("hashchange", route);
   try {
     const s = await api("/session");
     csrf = s.csrf_token || "";
-    document.getElementById("version").textContent = s.version ? "v" + s.version : "";
+    document.getElementById("version").textContent = s.version ? s.version.replace(/^v?/, "v") : "";
   } catch { /* the page reloads on 401 */ }
   route();
 })();
