@@ -5,6 +5,9 @@ Releases are built by [GoReleaser](https://goreleaser.com) in the
 release produces:
 
 - binaries for linux/darwin (amd64, arm64) and windows/amd64, with SBOMs
+- `.deb` and `.rpm` packages for linux amd64/arm64 (binary in `/usr/bin`,
+  bash/zsh/fish completions), smoke-tested on Ubuntu and UBI 9 after the
+  release is published
 - `checksums.txt`, signed keylessly with Sigstore cosign
 - multi-arch Docker images `ghcr.io/matusso/sslknife:<version>` and `:latest`
 - an updated Homebrew formula in
@@ -42,21 +45,33 @@ brew install matusso/tap/sslknife
 brew upgrade sslknife
 ```
 
+GoReleaser pushes the formula over SSH with a deploy key, so no personal
+access token is needed. The release workflow fails early if the key is
+missing, instead of silently skipping the formula as it used to.
+
 One-time setup:
 
-1. Create the public repository `matusso/homebrew-tap` (with a README so it
-   has a default branch).
-2. Create a fine-grained personal access token limited to that repository,
-   with *Contents: read and write*.
-3. Add it to `matusso/sslknife` as the Actions secret
-   `HOMEBREW_TAP_GITHUB_TOKEN`.
+1. Create the public repository `matusso/homebrew-tap` with a `main` branch
+   (for example with a README).
+2. Generate a key pair and add the public half as a deploy key with write
+   access, and the private half as the Actions secret
+   `HOMEBREW_TAP_DEPLOY_KEY` of `matusso/sslknife`:
 
-Without the secret the release still runs and only the formula upload is
-skipped.
+   ```sh
+   ssh-keygen -t ed25519 -N '' -C sslknife-release -f tap_key
+   gh repo deploy-key add tap_key.pub -R matusso/homebrew-tap --allow-write -t sslknife-release
+   gh secret set HOMEBREW_TAP_DEPLOY_KEY -R matusso/sslknife < tap_key
+   rm tap_key tap_key.pub
+   ```
+
+The formula is a regular formula rather than a cask, so the same tap works
+on macOS and Linux. GoReleaser marks `brews` as deprecated in favour of
+casks; it still works.
 
 ## Checking the configuration locally
 
 ```sh
 go run github.com/goreleaser/goreleaser/v2@latest check
 go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=sign,docker
+# packages land in dist/*.deb and dist/*.rpm
 ```
