@@ -22,6 +22,25 @@ brew install matusso/tap/sslknife
 brew upgrade sslknife        # later, to get the newest release
 ```
 
+**Debian / Ubuntu** (`.deb`, amd64 and arm64):
+
+```sh
+VERSION=$(curl -fsSL https://api.github.com/repos/matusso/sslknife/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+ARCH=$(dpkg --print-architecture)
+curl -fLO "https://github.com/matusso/sslknife/releases/download/v${VERSION}/sslknife_${VERSION}_${ARCH}.deb"
+sudo apt install "./sslknife_${VERSION}_${ARCH}.deb"
+```
+
+**Fedora / RHEL / openSUSE** (`.rpm`, x86_64 and aarch64):
+
+```sh
+VERSION=$(curl -fsSL https://api.github.com/repos/matusso/sslknife/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+sudo dnf install "https://github.com/matusso/sslknife/releases/download/v${VERSION}/sslknife-${VERSION}-1.$(uname -m).rpm"
+```
+
+Both packages install `/usr/bin/sslknife` with bash, zsh and fish
+completions. Install a newer package the same way to upgrade.
+
 **Go** (1.27+), latest or a specific version:
 
 ```sh
@@ -36,7 +55,8 @@ docker run --rm -it -v sslknife-data:/data ghcr.io/matusso/sslknife init
 docker run -p 127.0.0.1:8443:8443 -v sslknife-data:/data -it ghcr.io/matusso/sslknife
 ```
 
-**Binaries** for Linux, macOS and Windows (amd64/arm64) are on the
+**Binaries** for Linux, macOS and Windows (amd64/arm64), and the `.deb` and
+`.rpm` packages, are on the
 [releases page](https://github.com/matusso/sslknife/releases), with SBOMs and
 a Sigstore-signed checksum file.
 

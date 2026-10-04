@@ -6,6 +6,8 @@ before:
   hooks:
     - go mod tidy
     - go test ./...
+    # Shell completions shipped in the deb/rpm packages.
+    - sh -c 'mkdir -p completions && for sh in bash zsh fish; do go run . completion "$sh" > "completions/sslknife.$sh"; done'
 
 builds:
   - id: sslknife
@@ -30,6 +32,31 @@ archives:
       - goos: windows
         formats: [zip]
     files: [README.md, LICENSE, docs/*.md]
+
+nfpms:
+  - id: packages
+    package_name: sslknife
+    ids: [sslknife]
+    formats: [deb, rpm]
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: matusso
+    maintainer: Matúš Bursa <https://github.com/matusso>
+    homepage: https://github.com/matusso/sslknife
+    description: Swiss-army knife for TLS, certificates, PKI and SSH keys
+    license: MIT
+    section: utils
+    bindir: /usr/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/sslknife/LICENSE
+      - src: README.md
+        dst: /usr/share/doc/sslknife/README.md
+      - src: completions/sslknife.bash
+        dst: /usr/share/bash-completion/completions/sslknife
+      - src: completions/sslknife.zsh
+        dst: /usr/share/zsh/vendor-completions/_sslknife
+      - src: completions/sslknife.fish
+        dst: /usr/share/fish/vendor_completions.d/sslknife.fish
 
 checksum:
   name_template: checksums.txt
@@ -64,12 +91,16 @@ docker_manifests:
 
 brews:
   - name: sslknife
-    # Skip publishing until the tap repo and HOMEBREW_TAP_GITHUB_TOKEN secret exist.
-    skip_upload: '{{ if not .Env.HOMEBREW_TAP_GITHUB_TOKEN }}true{{ end }}'
+    # A formula (not a cask) so the same tap works on macOS and Linux.
+    # Pushed over SSH with a write deploy key of matusso/homebrew-tap; the
+    # workflow fails before this point when the HOMEBREW_TAP_DEPLOY_KEY secret is missing.
     repository:
       owner: matusso
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      branch: main
+      git:
+        url: git@github.com:matusso/homebrew-tap.git
+        private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
     directory: Formula
     commit_author:
       name: github-actions[bot]

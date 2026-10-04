@@ -29,6 +29,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Check Homebrew tap key
+        env:
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_DEPLOY_KEY" ]; then
+            echo "::error::HOMEBREW_TAP_DEPLOY_KEY secret is not set, see docs/releasing.md"
+            exit 1
+          fi
       - name: Tag next version
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -70,6 +78,11 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Fine-grained token with contents:write on matusso/homebrew-tap.
-          # Without it the release still runs and the formula upload is skipped.
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # SSH private key of a write deploy key on matusso/homebrew-tap.
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+      - name: Smoke test packages
+        run: |
+          sudo apt-get install -y ./dist/sslknife_*_amd64.deb
+          sslknife version
+          docker run --rm -v "$PWD/dist:/dist:ro" registry.access.redhat.com/ubi9/ubi-minimal \
+            sh -c 'rpm -i /dist/sslknife-*.x86_64.rpm && sslknife version'
